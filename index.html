@@ -1,0 +1,158 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prueba de Geolocalización con Diagnóstico</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <style>
+        #map {
+            height: 400px;
+            width: 100%;
+        }
+        #diagnostic {
+            margin-top: 20px;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            background-color: #f1f1f1;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+        }
+        #location-info {
+            margin-top: 20px;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            background-color: #e7f7e7;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Prueba de Geolocalización con Diagnóstico</h2>
+    <button id="get-location-btn">Obtener mi ubicación</button>
+
+    <!-- Mapa -->
+    <div id="map"></div>
+
+    <!-- Diagnóstico de geolocalización -->
+    <div id="diagnostic"></div>
+
+    <!-- Información de ubicación -->
+    <div id="location-info"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        let map;
+        let locationMarker;
+
+        // Inicializar el mapa
+        function inicializarMapa() {
+            map = L.map('map').setView([20.673, -103.344], 5);  // Centro inicial en México
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+
+            L.control.scale({ imperial: false }).addTo(map);
+        }
+
+        // Función de diagnóstico para la geolocalización
+        function diagnosticoGeolocalizacion(position) {
+            const coords = position.coords;
+            const diagnosticElement = document.getElementById('diagnostic');
+            const locationInfo = document.getElementById('location-info');
+
+            let message = `<strong>Diagnóstico de Geolocalización</strong><br>`;
+            message += `Latitud: ${coords.latitude.toFixed(6)}<br>`;
+            message += `Longitud: ${coords.longitude.toFixed(6)}<br>`;
+            message += `Precisión: ${coords.accuracy} metros<br>`;
+            message += `Altitud: ${coords.altitude || 'No disponible'}<br>`;
+            message += `Velocidad: ${coords.speed || 'No disponible'} m/s<br>`;
+            message += `Dirección: ${coords.heading || 'No disponible'}°<br>`;
+
+            // Diagnóstico sobre la precisión
+            if (coords.accuracy < 100) {
+                message += `<strong>Alta precisión (GPS)</strong>`;
+            } else {
+                message += `<strong>Precisión baja (Wi-Fi o IP)</strong>`;
+            }
+
+            diagnosticElement.innerHTML = message;
+
+            // Mostrar información adicional
+            locationInfo.innerHTML = `
+                <strong>Ubicación aproximada:</strong><br>
+                Latitud: ${coords.latitude.toFixed(6)}<br>
+                Longitud: ${coords.longitude.toFixed(6)}<br>
+                Precisión: ${coords.accuracy} metros
+            `;
+        }
+
+        // Función para obtener la ubicación actual con alta precisión
+        function obtenerUbicacion() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(function(position) {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    diagnosticoGeolocalizacion(position);  // Mostrar diagnóstico
+                    establecerUbicacion(lat, lng);
+                }, function(error) {
+                    let errorMessage = 'Error al obtener la ubicación: ';
+                    switch (error.code) {
+                        case error.PERMISSION_DENIED:
+                            errorMessage += 'Permiso denegado. Por favor, habilita los permisos de ubicación.';
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            errorMessage += 'La ubicación no está disponible en este momento.';
+                            break;
+                        case error.TIMEOUT:
+                            errorMessage += 'El tiempo de espera para obtener la ubicación se agotó.';
+                            break;
+                        default:
+                            errorMessage += 'Error desconocido.';
+                    }
+                    alert(errorMessage);
+                }, {
+                    enableHighAccuracy: true,  // Activar alta precisión
+                    timeout: 10000,            // Tiempo de espera antes de fallar (en ms)
+                    maximumAge: 0              // No usar ubicación en caché
+                });
+            } else {
+                alert('La geolocalización no es soportada por este navegador.');
+            }
+        }
+
+        // Función para establecer la ubicación en el mapa
+        function establecerUbicacion(lat, lng) {
+            // Si ya existe un marcador, lo eliminamos
+            if (locationMarker) {
+                map.removeLayer(locationMarker);
+            }
+
+            // Colocar marcador en la ubicación obtenida
+            locationMarker = L.marker([lat, lng]).addTo(map);
+            locationMarker.bindPopup(`<b>Tu ubicación</b><br>Lat: ${lat}<br>Lng: ${lng}`).openPopup();
+
+            // Centrar el mapa en la ubicación
+            map.setView([lat, lng], 14);
+        }
+
+        // Evento para el botón de obtener ubicación
+        document.getElementById('get-location-btn').addEventListener('click', obtenerUbicacion);
+
+        // Verificar si la página está cargada por HTTPS (necesario para acceder a la ubicación en muchos navegadores)
+        if (window.location.protocol !== 'https:') {
+            alert('La geolocalización solo funciona en sitios cargados por HTTPS. Por favor, asegúrate de usar HTTPS.');
+        }
+
+        // Inicializar el mapa
+        inicializarMapa();
+    </script>
+
+</body>
+</html>
