@@ -342,7 +342,7 @@
             transform: translateX(24px);
         }
 
-        /* ===== FORMULARIO DE REPORTES ===== */
+        /* ===== FORMULARIO DE PROPUESTAS ===== */
         .form-group {
             margin-bottom: 1.25rem;
         }
@@ -403,7 +403,7 @@
             color: var(--primary);
         }
 
-        #coords-text {
+        #propuesta-coords-text {
             font-family: 'Monaco', 'Consolas', monospace;
             font-size: 0.8rem;
             color: var(--primary-light);
@@ -963,82 +963,6 @@
                 </div>
             </div>
 
-            <!-- PANEL DE REPORTES -->
-            <div class="panel">
-                <div class="panel-header">
-                    <i class="fas fa-comment-medical"></i>
-                    <h3>Enviar Reporte</h3>
-                </div>
-                <div class="panel-body">
-                    <div class="report-form">
-                        <!-- Formulario para enviar reportes ciudadanos -->
-                        <div class="form-group">
-                            <label for="nombre">Nombre</label>
-                            <input type="text" id="nombre" class="form-input" placeholder="Tu nombre">
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="tipo">Tipo de Requerimiento</label>
-                            <select id="tipo" class="form-select">
-                                <option value="">Seleccionar...</option>
-                                <option value="Agua Potable">Agua Potable</option>
-                                <option value="Alcantarillado">Alcantarillado</option>
-                                <option value="Alumbrado Público">Alumbrado Público</option>
-                                <option value="Vías">Vías</option>
-                                <option value="Seguridad">Seguridad</option>
-                                <option value="Limpieza">Limpieza</option>
-                                <option value="Otro">Otro</option>
-                            </select>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="comentarios">Comentarios</label>
-                            <textarea id="comentarios" class="form-textarea" placeholder="Describe el problema o requerimiento"></textarea>
-                        </div>
-                        
-                        <!-- Selección de ubicación para el reporte -->
-                        <div class="form-group">
-                            <label>Ubicación del Reporte</label>
-                            <div class="coords-container">
-                                <div class="coords-display">
-                                    <i class="fas fa-map-marker-alt"></i>
-                                    <span id="coords-text">No seleccionada</span>
-                                </div>
-                                
-                                <div class="coords-actions">
-                                    <button type="button" id="pick-on-map" class="btn btn-map">
-                                        <i class="fas fa-map-pin"></i>
-                                        Seleccionar en Mapa
-                                    </button>
-                                </div>
-                                
-                                <div class="coords-manual">
-                                    <label>Coordenadas Manuales</label>
-                                    <div class="coords-inputs">
-                                        <input type="number" id="lat-input" placeholder="Latitud" step="any" class="coord-input">
-                                    </div>
-                                    <div class="coords-inputs">
-                                        <input type="number" id="lng-input" placeholder="Longitud" step="any" class="coord-input">
-                                    </div>
-                                    <div class="coords-inputs">
-                                        <button type="button" id="set-manual-coords" class="btn btn-set">
-                                            <i class="fas fa-check"></i>
-                                            Establecer
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Botón para enviar el reporte -->
-                        <button type="button" id="report-send" class="btn btn-send">
-                            <i class="fas fa-paper-plane"></i>
-                            Enviar Reporte
-                        </button>
-                    </div>
-                </div>
-            </div>
-
             <!-- PANEL DE ESTADO DE LA CONEXIÓN -->
             <div id="status" class="status-panel"></div>
         </aside>
@@ -1511,73 +1435,6 @@
                 
             } catch (error) {
                 console.error('Error al cargar reportes:', error);
-            }
-        }
-
-        // ===== FUNCIÓN: ENVIAR REPORTE =====
-        async function enviarReporte() {
-            const nombre = document.getElementById('nombre').value.trim();
-            const tipo = document.getElementById('tipo').value;
-            const comentarios = document.getElementById('comentarios').value.trim();
-            
-            if (!nombre || !tipo || !comentarios) {
-                alert('Por favor completa todos los campos obligatorios');
-                return;
-            }
-            
-            if (!selectedLocation) {
-                alert('Por favor selecciona una ubicación para el reporte');
-                return;
-            }
-            
-            try {
-                const reporteData = {
-                    nombre: nombre,
-                    tipo_requerimiento: tipo,
-                    comentarios: comentarios,
-                    lat: selectedLocation.lat,
-                    lng: selectedLocation.lng
-                };
-                
-                const respuesta = await fetch(`${SUPABASE_URL}/rest/v1/reportes_ciudadanos`, {
-                    method: 'POST',
-                    headers: { 
-                        'apikey': SUPABASE_KEY, 
-                        'Authorization': `Bearer ${SUPABASE_KEY}`,
-                        'Content-Type': 'application/json',
-                        'Prefer': 'return=representation'
-                    },
-                    body: JSON.stringify(reporteData)
-                });
-                
-                if (!respuesta.ok) {
-                    const errorData = await respuesta.json();
-                    throw new Error(`Error ${respuesta.status}: ${JSON.stringify(errorData)}`);
-                }
-                
-                const nuevoReporte = await respuesta.json();
-                
-                alert('✅ Reporte enviado correctamente');
-                
-                // Limpiar formulario
-                document.getElementById('nombre').value = '';
-                document.getElementById('tipo').value = '';
-                document.getElementById('comentarios').value = '';
-                document.getElementById('coords-text').textContent = 'No seleccionada';
-                document.getElementById('lat-input').value = '';
-                document.getElementById('lng-input').value = '';
-                
-                if (locationMarker) {
-                    map.removeLayer(locationMarker);
-                    locationMarker = null;
-                }
-                
-                selectedLocation = null;
-                cargarReportes();
-                
-            } catch (error) {
-                console.error('Error al enviar reporte:', error);
-                alert('❌ Error al enviar el reporte: ' + error.message);
             }
         }
 
@@ -2316,26 +2173,6 @@
                 }
             });
 
-            // Eventos para formulario de reportes
-            document.getElementById('pick-on-map').addEventListener('click', function() {
-                activarSeleccionUbicacion();
-            });
-
-            document.getElementById('set-manual-coords').addEventListener('click', function() {
-                const lat = parseFloat(document.getElementById('lat-input').value);
-                const lng = parseFloat(document.getElementById('lng-input').value);
-                
-                if (!isNaN(lat) && !isNaN(lng)) {
-                    establecerUbicacion(lat, lng);
-                } else {
-                    alert('Por favor ingresa coordenadas válidas');
-                }
-            });
-
-            document.getElementById('report-send').addEventListener('click', function() {
-                enviarReporte();
-            });
-
             // Eventos para formulario de propuestas
             document.getElementById('propuesta-pick-on-map').addEventListener('click', function() {
                 activarSeleccionUbicacionPropuesta();
@@ -2358,10 +2195,6 @@
 
             // Eventos del mapa
             map.on('click', function(e) {
-                if (isPickingLocation) {
-                    establecerUbicacion(e.latlng.lat, e.latlng.lng);
-                    desactivarSeleccionUbicacion();
-                }
                 if (isPickingPropuestaLocation) {
                     establecerUbicacionPropuesta(e.latlng.lat, e.latlng.lng);
                     desactivarSeleccionUbicacionPropuesta();
@@ -2370,9 +2203,6 @@
 
             document.addEventListener('keydown', function(e) {
                 if (e.key === 'Escape') {
-                    if (isPickingLocation) {
-                        desactivarSeleccionUbicacion();
-                    }
                     if (isPickingPropuestaLocation) {
                         desactivarSeleccionUbicacionPropuesta();
                     }
@@ -2389,55 +2219,6 @@
                     cerrarModalUsoSuelo();
                 }
             });
-        }
-
-        // ===== FUNCIONES AUXILIARES PARA SELECCIÓN DE UBICACIÓN =====
-        function activarSeleccionUbicacion() {
-            isPickingLocation = true;
-            map.getContainer().style.cursor = 'crosshair';
-            mostrarMensajeSeleccion();
-            document.getElementById('pick-on-map').disabled = true;
-            document.getElementById('pick-on-map').innerHTML = '<i class="fas fa-map-pin"></i> Seleccionando...';
-        }
-
-        function desactivarSeleccionUbicacion() {
-            isPickingLocation = false;
-            map.getContainer().style.cursor = '';
-            document.getElementById('pick-on-map').disabled = false;
-            document.getElementById('pick-on-map').innerHTML = '<i class="fas fa-map-pin"></i> Seleccionar en Mapa';
-            ocultarMensajeSeleccion();
-        }
-
-        function mostrarMensajeSeleccion() {
-            let mensaje = document.getElementById('seleccion-mensaje');
-            if (!mensaje) {
-                mensaje = document.createElement('div');
-                mensaje.id = 'seleccion-mensaje';
-                mensaje.style.cssText = `
-                    position: absolute;
-                    top: 10px;
-                    left: 50%;
-                    transform: translateX(-50%);
-                    background: rgba(31, 41, 55, 0.95);
-                    color: white;
-                    padding: 10px 20px;
-                    border-radius: 8px;
-                    z-index: 1000;
-                    border: 1px solid var(--primary);
-                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-                    font-size: 14px;
-                `;
-                document.querySelector('.map-container').appendChild(mensaje);
-            }
-            mensaje.innerHTML = '<i class="fas fa-crosshairs"></i> Haz clic en el mapa para seleccionar ubicación (ESC para cancelar)';
-            mensaje.style.display = 'block';
-        }
-
-        function ocultarMensajeSeleccion() {
-            const mensaje = document.getElementById('seleccion-mensaje');
-            if (mensaje) {
-                mensaje.style.display = 'none';
-            }
         }
 
         // ===== FUNCIONES PARA MODAL DE USO DE SUELO =====
