@@ -1933,6 +1933,24 @@
              y maxlength en nombre/sesión/comentarios acorde a los CHECK del lado de
              la base (1800 en comentarios deja margen a las etiquetas
              [Tipo/Ámbito/Prioridad/Sesión] que se anteponen al guardar).
+           ----------------------------------------------------------------------------
+           TERCERA REVISIÓN — "la ubicación sale mal"
+           - Causa: una sola llamada a getCurrentPosition regresa la PRIMERA
+             estimación del dispositivo (lectura burda de red antes de que el GPS
+             afine; en computadora, estimación por IP errada por kilómetros),
+             maximumAge>0 permitía además posiciones viejas en caché, y el reintento
+             en "baja precisión" prácticamente garantizaba una lectura por IP.
+           - Corrección: watchPosition deja calentar el GPS y conserva la lectura de
+             MEJOR precisión (corta al llegar a ±30 m o a los 12 s; botón muestra el
+             progreso "Afinando… ±X m"); maximumAge:0 prohíbe caché. Compuertas de
+             calidad: ≤150 m fija el punto; 150–1500 m lo fija pidiendo verificar;
+             >1500 m NO planta un pin con falsa confianza — encuadra la zona
+             estimada, explica el porqué (equipo sin GPS → IP/red) y activa
+             "Marcar en Mapa" para que la persona ponga el punto exacto.
+           - Se corrige también un bug latente del manejo de errores: comparar
+             err.code === err.PERMISSION_DENIED con un Error genérico daba
+             undefined === undefined (true) y mostraba el mensaje equivocado;
+             ahora se usan códigos numéricos (1/2/3).
            ============================================================================ */
 
         // ===== CONFIGURACIÓN DE SUPABASE =====
@@ -2707,10 +2725,59 @@
         // Geolocalización del navegador (GPS/red) como punto de referencia para la
         // participación. Nota: los navegadores solo la permiten en contextos seguros
         // (HTTPS o localhost); abierto como file:// algunos la bloquean.
-        // Promesa sobre getCurrentPosition para poder reintentar con otras opciones
+        // ===== GEOLOCALIZACIÓN =====
+        // Umbrales de calidad de la lectura (metros)
+        const GPS_PRECISION_BUENA_M = 150;      // se fija el punto directamente
+        const GPS_PRECISION_ACEPTABLE_M = 1500; // se fija, pero se pide verificar
+
+        // Promesa sobre getCurrentPosition (un solo intento)
         function obtenerPosicion(opciones) {
             return new Promise((resolve, reject) => {
                 navigator.geolocation.getCurrentPosition(resolve, reject, opciones);
+            });
+        }
+
+        // CORRECCIÓN "la ubicación sale mal": una sola llamada a getCurrentPosition
+        // regresa la PRIMERA estimación del dispositivo — en celular, la lectura
+        // burda de red antes de que el GPS afine; en computadora, una estimación
+        // por IP errada por kilómetros — y maximumAge>0 permitía además posiciones
+        // viejas en caché. Aquí se usa watchPosition para dejar que el GPS se
+        // caliente, se conserva la lectura de MEJOR precisión y se corta al
+        // alcanzar el objetivo o agotar el tiempo. maximumAge:0 prohíbe caché.
+        function obtenerMejorPosicion({ objetivoM = 30, maxEsperaMs = 12000, onProgreso } = {}) {
+            return new Promise((resolve, reject) => {
+                let mejor = null;
+                let watchId = null;
+                let timer = null;
+                let cerrado = false;
+
+                const terminar = (err) => {
+                    if (cerrado) return;
+                    cerrado = true;
+                    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+                    clearTimeout(timer);
+                    if (mejor) resolve(mejor);
+                    else reject(err || { code: 3, message: 'Sin lecturas de posición' });
+                };
+
+                timer = setTimeout(() => terminar(), maxEsperaMs);
+
+                watchId = navigator.geolocation.watchPosition(
+                    (pos) => {
+                        if (!mejor || pos.coords.accuracy < mejor.coords.accuracy) {
+                            mejor = pos;
+                            if (onProgreso) onProgreso(pos);
+                        }
+                        if (pos.coords.accuracy <= objetivoM) terminar();
+                    },
+                    (err) => {
+                        // code 1 = permiso denegado: cortar de inmediato. Con otros
+                        // errores se sigue esperando por si llega una lectura tardía.
+                        if (err.code === 1) { mejor = null; terminar(err); }
+                        else if (!mejor) terminar(err);
+                    },
+                    { enableHighAccuracy: true, maximumAge: 0, timeout: maxEsperaMs }
+                );
             });
         }
 
@@ -2760,15 +2827,43 @@
             try {
                 let pos;
                 try {
-                    pos = await obtenerPosicion({ enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
+                    pos = await obtenerMejorPosicion({
+                        objetivoM: 30,
+                        maxEsperaMs: 12000,
+                        onProgreso: (p) => {
+                            btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Afinando… ±${Math.round(p.coords.accuracy)} m`;
+                        }
+                    });
                 } catch (err) {
-                    if (err.code === err.PERMISSION_DENIED) throw err;
-                    // Reintento en baja precisión: equipos de escritorio sin GPS
-                    // suelen agotar el tiempo en modo de alta precisión.
-                    pos = await obtenerPosicion({ enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 });
+                    if (err && err.code === 1) throw err;
+                    // Último recurso: una lectura de red en baja precisión (pasará
+                    // por las mismas compuertas de calidad de abajo).
+                    pos = await obtenerPosicion({ enableHighAccuracy: false, timeout: 8000, maximumAge: 0 });
                 }
                 
                 const { latitude, longitude, accuracy } = pos.coords;
+                const distKm = distanciaKm(latitude, longitude, MUNICIPIO_CENTRO.lat, MUNICIPIO_CENTRO.lng);
+                
+                if (accuracy > GPS_PRECISION_ACEPTABLE_M) {
+                    // Lectura burda (típico de computadora sin GPS: el navegador
+                    // estima por IP/red). NO se planta un pin con falsa confianza:
+                    // se encuadra la zona estimada y se pasa a selección manual.
+                    if (gpsAccuracyCircle) map.removeLayer(gpsAccuracyCircle);
+                    gpsAccuracyCircle = L.circle([latitude, longitude], {
+                        radius: accuracy,
+                        color: '#f59e0b',
+                        fillColor: '#f59e0b',
+                        fillOpacity: 0.08,
+                        weight: 1.5,
+                        dashArray: '4 4',
+                        interactive: false
+                    }).addTo(map);
+                    map.fitBounds(gpsAccuracyCircle.getBounds(), { padding: [30, 30] });
+                    if (isMobile && sidebarState !== 'closed') toggleSidebar();
+                    activarSeleccionUbicacion();
+                    mostrarNotificacion(`⚠️ Tu dispositivo solo pudo estimar la zona (±${(accuracy / 1000).toFixed(1)} km). En equipos sin GPS el navegador ubica por IP/red y puede fallar por kilómetros. Haz clic en el mapa para marcar el punto exacto`, 'warning');
+                    return;
+                }
                 
                 establecerUbicacion(latitude, longitude);
                 
@@ -2784,12 +2879,10 @@
                     interactive: false
                 }).addTo(map);
                 
-                if (accuracy > 150) {
+                if (accuracy > GPS_PRECISION_BUENA_M) {
                     map.fitBounds(gpsAccuracyCircle.getBounds(), { padding: [30, 30] });
-                }
-                
-                const distKm = distanciaKm(latitude, longitude, MUNICIPIO_CENTRO.lat, MUNICIPIO_CENTRO.lng);
-                if (distKm > RADIO_AVISO_KM) {
+                    mostrarNotificacion(`⚠️ Precisión de ±${Math.round(accuracy)} m: revisa que el pin esté donde debe y ajústalo con "Marcar en Mapa" si hace falta`, 'warning');
+                } else if (distKm > RADIO_AVISO_KM) {
                     mostrarNotificacion(`⚠️ Tu ubicación está a ~${Math.round(distKm)} km del municipio; verifica que sea la correcta antes de enviar`, 'warning');
                 } else {
                     mostrarNotificacion(`📍 Ubicación obtenida (precisión ±${Math.round(accuracy)} m)`, 'success');
@@ -2797,7 +2890,7 @@
                 
             } catch (err) {
                 let mensaje = '❌ No se pudo obtener tu ubicación';
-                if (err.code === err.PERMISSION_DENIED) {
+                if (err && err.code === 1) {
                     if (estadoPermiso === 'granted' || estadoPermiso === 'prompt') {
                         // El permiso del sitio estaba bien: el bloqueo viene del
                         // sistema operativo hacia el navegador.
@@ -2805,10 +2898,10 @@
                     } else {
                         mensaje = '❌ Permiso de ubicación denegado. Haz clic en el candado junto a la dirección → Ubicación → Permitir';
                     }
-                } else if (err.code === err.POSITION_UNAVAILABLE) {
+                } else if (err && err.code === 2) {
                     mensaje = '❌ Ubicación no disponible: revisa el GPS o la señal del dispositivo';
-                } else if (err.code === err.TIMEOUT) {
-                    mensaje = '❌ Tiempo de espera agotado al obtener la ubicación. Intenta de nuevo';
+                } else if (err && err.code === 3) {
+                    mensaje = '❌ Tiempo agotado al obtener la ubicación. Intenta de nuevo, de preferencia con el GPS activo o cerca de una ventana';
                 }
                 mostrarNotificacion(mensaje, 'error');
             } finally {
